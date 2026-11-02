@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
-import { GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { QueryCommand, type QueryCommandInput } from "@aws-sdk/lib-dynamodb";
 import {
+  actorKey,
   ddb,
   isRoleItem,
   movieKey,
@@ -21,22 +22,37 @@ export const handler = async (
     return response(400, { message: "movieID must be a positive integer" });
   }
   try {
-    const queryResult = await ddb.send(
-      new QueryCommand({
-        TableName: tableName,
-        KeyConditionExpression: "PK = :pk",
-        ExpressionAttributeValues: { ":pk": movieKey(movieId) },
-        // ExclusiveStartKey: lastKey,
-      })
-    );
+    const actorParam = event.queryStringParameters?.actor;
+    const actorId = parseId(actorParam);
+
+    if (actorParam !== undefined && actorId === undefined) {
+      return response(400, { message: "actor must be a positive integer" });
+    }
+
+
+    const commandInput: QueryCommandInput = {
+      TableName: tableName,
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+      ExpressionAttributeValues: {
+        ":pk": movieKey(movieId),
+        ":prefix": "a#",
+      },
+    };
+
+    if (actorId !== undefined) {
+      commandInput.KeyConditionExpression = "PK = :pk AND SK = :sk";
+      commandInput.ExpressionAttributeValues = {
+        ":pk": movieKey(movieId),
+        ":sk": actorKey(actorId),
+      };
+    }
+
+    const queryResult = await ddb.send(new QueryCommand(commandInput));
 
     const resultItems = queryResult.Items ?? [];
     return response(200, { data: resultItems.filter(isRoleItem).map(toRole) });
   } catch (err) {
     console.error("DynamoDB error:", err);
-    return response(500, {
-      message: "Internal server error",
-      error: err,
-    });
+    return response(500, { message: "Internal server error" });
   }
 };
