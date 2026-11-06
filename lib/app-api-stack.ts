@@ -94,10 +94,24 @@ export class AppApiStack extends cdk.Stack {
     };
     // Routes
     const moviesResource = api.root.addResource('movies');
-moviesResource
-  .addResource('roles')
-  .addMethod('POST', new apig.LambdaIntegration(addMovieRoleFn));
-  
+  moviesResource
+      .addResource('roles')
+      .addMethod('POST', new apig.LambdaIntegration(addMovieRoleFn), {
+        apiKeyRequired: true,
+      });
+
+          // Generate the administrator key and link it to the API stage.
+    const adminKey = api.addApiKey('AdminApiKey');
+
+    const adminPlan = api.addUsagePlan('AdminUsagePlan', {
+      name: 'Administrator',
+    });
+
+    adminPlan.addApiKey(adminKey);
+    adminPlan.addApiStage({
+      stage: api.deploymentStage,
+    });
+
     const movieRolesResource = moviesResource.addResource('{movieID}').addResource('roles');
     movieRolesResource.addMethod(
   'GET',
