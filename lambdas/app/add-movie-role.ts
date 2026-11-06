@@ -4,7 +4,7 @@ import { actorKey, ddb, movieKey, type Role, tableName } from "../shared/db";
 import { isResponse, parseJsonObject, response } from "../shared/http";
 import Ajv from "ajv";
 import schema from "../shared/model.schema.json";
-
+import { TransactionCanceledException } from "@aws-sdk/client-dynamodb";
 
 const ajv = new Ajv();
 const isValidRolePayload = ajv.compile<Role>(schema);
@@ -70,7 +70,34 @@ if (!isValidRolePayload(body)) {
     );
 
     return response(201, { message: "Role added", data: role });
-  } catch (err) {
+   } catch (err) {
+    // Check if a transaction condition failed
+    if (err instanceof TransactionCanceledException) {
+      const reasons = err.CancellationReasons;
+
+      // First check: the movie must exist
+      if (reasons?.[0]?.Code === "ConditionalCheckFailed") {
+        return response(404, {
+          message: `Movie ${role.movieId} not found`,
+        });
+      }
+
+      // Second check: the actor must exist
+      if (reasons?.[1]?.Code === "ConditionalCheckFailed") {
+        return response(404, {
+          message: `Actor ${role.actorId} not found`,
+        });
+      }
+
+      // Third check: the role must not already exist
+      if (reasons?.[2]?.Code === "ConditionalCheckFailed") {
+        return response(409, {
+          message: "A role already exists for this actor in this movie",
+        });
+      }
+    }
+
+    // Log unexpected errors and return a message
     console.error("DynamoDB error:", err);
     return response(500, {
       message: "Internal server error",
