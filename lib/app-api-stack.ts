@@ -88,21 +88,26 @@ export class AppApiStack extends cdk.Stack {
       },
     });
 
+
+     // Require a valid Cognito login for GET requests
     const userAuth: apig.MethodOptions = {
       authorizer: userAuthorizer,
       authorizationType: apig.AuthorizationType.CUSTOM,
     };
     // Routes
     const moviesResource = api.root.addResource('movies');
+    // POST /movies/roles requires the administrator API key
   moviesResource
       .addResource('roles')
       .addMethod('POST', new apig.LambdaIntegration(addMovieRoleFn), {
         apiKeyRequired: true,
       });
 
-          // Generate the administrator key and link it to the API stage.
+          // Generate the administrator key and link it to the API stage
     const adminKey = api.addApiKey('AdminApiKey');
 
+
+    // A usage plan connects the key to the deployed API
     const adminPlan = api.addUsagePlan('AdminUsagePlan', {
       name: 'Administrator',
     });
@@ -112,6 +117,7 @@ export class AppApiStack extends cdk.Stack {
       stage: api.deploymentStage,
     });
 
+    // GET /movies/{movieID}/roles requires a logged-in user
     const movieRolesResource = moviesResource.addResource('{movieID}').addResource('roles');
     movieRolesResource.addMethod(
   'GET',
@@ -119,6 +125,7 @@ export class AppApiStack extends cdk.Stack {
   userAuth
 );
 
+// GET /actors/{actorID} also requires a logged-in user
     api.root
       .addResource('actors')
       .addResource('{actorID}')

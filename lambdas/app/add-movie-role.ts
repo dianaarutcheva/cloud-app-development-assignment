@@ -13,12 +13,15 @@ const isValidRolePayload = ajv.compile<Role>(schema);
 export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
+  // Log the administrator request and its path
   logRequest(event);
 
+
+  // Read the JSON body. Return an error if it cannot be parsed.
   const body = parseJsonObject(event);
   if (isResponse(body)) return body;
 
-// Check the request body against the Role schema.
+// Check that all required fields have the correct types
 if (!isValidRolePayload(body)) {
   return response(400, {
     message: "Incorrect type. Must match the Role schema",
@@ -26,6 +29,8 @@ if (!isValidRolePayload(body)) {
   });
 }
 
+
+ // Build the role data returned to the client
   const role: Role = {
     movieId: body.movieId as number,
     actorId: body.actorId as number,
@@ -34,10 +39,12 @@ if (!isValidRolePayload(body)) {
   };
 
     try {
+      // Run the checks and save together. If any check fails, nothing is saved.
     await ddb.send(
       new TransactWriteCommand({
         TransactItems: [
           {
+             // Check that the movie exists
             ConditionCheck: {
               TableName: tableName,
               Key: {
@@ -48,6 +55,7 @@ if (!isValidRolePayload(body)) {
             },
           },
           {
+            // Check that the actor exists
             ConditionCheck: {
               TableName: tableName,
               Key: {
@@ -58,6 +66,7 @@ if (!isValidRolePayload(body)) {
             },
           },
           {
+            // Save the role only if this movie and actor pair is new
             Put: {
               TableName: tableName,
               Item: {
@@ -74,25 +83,25 @@ if (!isValidRolePayload(body)) {
 
     return response(201, { message: "Role added", data: role });
    } catch (err) {
-    // Check if a transaction condition failed
+    // Find which transaction condition failed
     if (err instanceof TransactionCanceledException) {
       const reasons = err.CancellationReasons;
 
-      // First check: the movie must exist
+      // First item: the movie was not found.
       if (reasons?.[0]?.Code === "ConditionalCheckFailed") {
         return response(404, {
           message: `Movie ${role.movieId} not found`,
         });
       }
 
-      // Second check: the actor must exist
+      // Second item: the actor was not found
       if (reasons?.[1]?.Code === "ConditionalCheckFailed") {
         return response(404, {
           message: `Actor ${role.actorId} not found`,
         });
       }
 
-      // Third check: the role must not already exist
+      // Third item: the role already exists
       if (reasons?.[2]?.Code === "ConditionalCheckFailed") {
         return response(409, {
           message: "A role already exists for this actor in this movie",
@@ -100,7 +109,7 @@ if (!isValidRolePayload(body)) {
       }
     }
 
-    // Log unexpected errors and return a message
+    // Log unexpected errors and return a general message
     console.error("DynamoDB error:", err);
     return response(500, {
       message: "Internal server error",

@@ -15,13 +15,18 @@ import { logRequest } from "../shared/request-logger";
 export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
+  // Log the username and request path
   logRequest(event);
 
+
+  // Check the actor ID from the URL
   const actorId = parseId(event.pathParameters?.actorID);
   if (actorId === undefined) {
     return response(400, { message: "actorID must be a positive integer" });
   }
 
+
+  // Check the optional movie ID
   const movieParam = event.queryStringParameters?.movie;
   const movieId = parseId(movieParam);
   if (movieParam !== undefined && movieId === undefined) {
@@ -38,8 +43,11 @@ export const handler = async (
     if (!actorResult.Item) {
       return response(404, { message: `Actor ${actorId} not found` });
     }
+    // Remove the database keys from the actor data
     const actor = toActor(actorResult.Item);
 
+
+    // If a movie was supplied, look for this actor's role in it
     if (movieId !== undefined) {
       const roleResult = await ddb.send(
         new GetCommand({
@@ -51,6 +59,8 @@ export const handler = async (
         })
       );
 
+
+      // Include the role when the actor has one in this movie
       if (roleResult.Item) {
         return response(200, {
           data: {
@@ -61,8 +71,11 @@ export const handler = async (
       }
     }
 
+
+    // Return the profile alone when no matching role was found
     return response(200, { data: actor });
   } catch (err) {
+    // Log unexpected errors and return a general message
     console.error("DynamoDB error:", err);
     return response(500, { message: "Internal server error" });
   }
